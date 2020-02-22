@@ -9,6 +9,7 @@ import (
 	"strings"
 
 	"github.com/hashicorp/terraform/helper/schema"
+	"github.com/hashicorp/terraform/helper/validation"
 )
 
 // CloneURL is the internal struct we use to represent urls
@@ -20,6 +21,35 @@ type CloneURL struct {
 // PipelinesEnabled is the struct we send to turn on or turn off pipelines for a repository
 type PipelinesEnabled struct {
 	Enabled bool `json:"enabled"`
+}
+
+// DevelopmentBranch is the struct we send to configure development branch for a repository
+type DevelopmentBranch struct {
+	IsValid       bool   `json:"is_valid,omitempty"`
+	Name          string `json:"name,omitempty"`
+	UseMainbranch bool   `json:"use_mainbranch,omitempty"`
+}
+
+// ProductionBranch is the struct we send to configure production branch for a repository
+type ProductionBranch struct {
+	IsValid       bool   `json:"is_valid,omitempty"`
+	Enabled       bool   `json:"enabled,omitempty"`
+	Name          string `json:"name,omitempty"`
+	UseMainbranch bool   `json:"use_mainbranch,omitempty"`
+}
+
+// BranchType is the struct we send to configure branch types for a repository
+type BranchType struct {
+	Kind    string `json:"kind,omitempty"`
+	Enabled bool   `json:"enabled,omitempty"`
+	Prefix  string `json:"prefix,omitempty"`
+}
+
+// BranchingModelSettings is the struct we send to configure branching model for a repository
+type BranchingModelSettings struct {
+	Development DevelopmentBranch `json:"development,omitempty"`
+	Production  ProductionBranch  `json:"production,omitempty"`
+	BranchTypes []BranchType      `json:"branch_types,omitempty"`
 }
 
 // Repository is the struct we need to send off to the Bitbucket API to create a repository
@@ -120,6 +150,85 @@ func resourceRepository() *schema.Resource {
 				Type:     schema.TypeString,
 				Optional: true,
 				Computed: true,
+			},
+			"branching_model_settings": {
+				Type:     schema.TypeList,
+				Optional: true,
+				MaxItems: 1,
+				Elem: &schema.Resource{
+					Schema: map[string]*schema.Schema{
+						"development": {
+							Type:     schema.TypeList,
+							Optional: true,
+							MaxItems: 1,
+							Elem: &schema.Resource{
+								Schema: map[string]*schema.Schema{
+									"name": {
+										Type:     schema.TypeString,
+										Optional: true,
+									},
+									"use_mainbranch": {
+										Type:     schema.TypeBool,
+										Optional: true,
+										Default:  true,
+									},
+								},
+							},
+						},
+						"branch_types": {
+							Type:     schema.TypeList,
+							Optional: true,
+							MaxItems: 4,
+							Elem: &schema.Resource{
+								Schema: map[string]*schema.Schema{
+									"kind": {
+										Type:     schema.TypeString,
+										Required: true,
+										ValidateFunc: validation.StringInSlice([]string{
+											"release",
+											"hotfix",
+											"feature",
+											"bugfix",
+										},
+											false),
+									},
+									"enabled": {
+										Type:     schema.TypeBool,
+										Optional: true,
+										Default:  true,
+									},
+									"prefix": {
+										Type:     schema.TypeString,
+										Optional: true,
+									},
+								},
+							},
+						},
+						"production": {
+							Type:     schema.TypeList,
+							Optional: true,
+							MaxItems: 1,
+							Elem: &schema.Resource{
+								Schema: map[string]*schema.Schema{
+									"enabled": {
+										Type:     schema.TypeBool,
+										Optional: true,
+										Default:  false,
+									},
+									"name": {
+										Type:     schema.TypeString,
+										Optional: true,
+									},
+									"use_mainbranch": {
+										Type:     schema.TypeBool,
+										Optional: true,
+										Default:  true,
+									},
+								},
+							},
+						},
+					},
+				},
 			},
 		},
 	}
@@ -317,6 +426,56 @@ func resourceRepositoryRead(d *schema.ResourceData, m interface{}) error {
 			d.Set("pipelines_enabled", pipelinesConfig.Enabled)
 		}
 
+		branchingModelSettingsReq, err := client.Get(fmt.Sprintf("2.0/repositories/%s/%s/branching-model/settings",
+			d.Get("owner").(string),
+			repoSlug))
+
+		if err != nil {
+			return err
+		}
+
+		if branchingModelSettingsReq.StatusCode == 200 {
+			var branchingModelSettings BranchingModelSettings
+
+			body, readerr := ioutil.ReadAll(branchingModelSettingsReq.Body)
+			if readerr != nil {
+				return readerr
+			}
+
+			decodeerr := json.Unmarshal(body, &branchingModelSettings)
+			if decodeerr != nil {
+				return decodeerr
+			}
+
+			branchTypes := make([]interface{}, 0, len(branchingModelSettings.BranchTypes))
+
+			for _, item := range branchingModelSettings.BranchTypes {
+				branchTypes = append(branchTypes, map[string]interface{}{
+					"kind":    item.Kind,
+					"enabled": item.Enabled,
+					"prefix":  item.Prefix,
+				})
+			}
+
+			d.Set("branching_model_settings", []interface{}{
+				map[string]interface{}{
+					"branch_types": branchTypes,
+					"development": []interface{}{
+						map[string]interface{}{
+							"name":           branchingModelSettings.Development.Name,
+							"use_mainbranch": branchingModelSettings.Development.UseMainbranch,
+						},
+					},
+					"production": []interface{}{
+						map[string]interface{}{
+							"enabled":        branchingModelSettings.Production.Enabled,
+							"name":           branchingModelSettings.Production.Name,
+							"use_mainbranch": branchingModelSettings.Production.UseMainbranch,
+						},
+					},
+				},
+			})
+		}
 	}
 
 	return nil
