@@ -27,7 +27,7 @@ type PipelinesEnabled struct {
 type DevelopmentBranch struct {
 	IsValid       bool   `json:"is_valid,omitempty"`
 	Name          string `json:"name,omitempty"`
-	UseMainbranch bool   `json:"use_mainbranch,omitempty"`
+	UseMainbranch bool   `json:"use_mainbranch"`
 }
 
 // ProductionBranch is the struct we send to configure production branch for a repository
@@ -294,6 +294,86 @@ func resourceRepositoryUpdate(d *schema.ResourceData, m interface{}) error {
 	if err != nil {
 		return err
 	}
+
+	branchingModelSettings := d.Get("branching_model_settings").([]interface{})
+	if len(branchingModelSettings) == 0 || branchingModelSettings[0] == nil {
+	} else {
+		loc := branchingModelSettings[0].(map[string]interface{})
+
+		outBranchingModelSettings := &BranchingModelSettings{}
+
+		developmentBranch := loc["development"].([]interface{})
+		if len(developmentBranch) == 0 || developmentBranch[0] == nil {
+		} else {
+			loc2 := developmentBranch[0].(map[string]interface{})
+			outDevelopmentBranch := &DevelopmentBranch{}
+			if v, ok := loc2["name"]; ok {
+				outDevelopmentBranch.Name = v.(string)
+			}
+			if v, ok := loc2["use_mainbranch"]; ok {
+				outDevelopmentBranch.UseMainbranch = v.(bool)
+			}
+
+			outBranchingModelSettings.Development = *outDevelopmentBranch
+		}
+
+		productionBranch := loc["production"].([]interface{})
+		if len(productionBranch) == 0 || productionBranch[0] == nil {
+		} else {
+			loc2 := productionBranch[0].(map[string]interface{})
+			outProductionBranch := &ProductionBranch{}
+			if v, ok := loc2["name"]; ok {
+				outProductionBranch.Name = v.(string)
+			}
+			if v, ok := loc2["use_mainbranch"]; ok {
+				outProductionBranch.UseMainbranch = v.(bool)
+			}
+			if v, ok := loc2["enabled"]; ok {
+				outProductionBranch.Enabled = v.(bool)
+			}
+
+			outBranchingModelSettings.Production = *outProductionBranch
+		}
+
+		branchTypes := loc["branch_types"].([]interface{})
+		if len(branchTypes) == 0 || branchTypes[0] == nil {
+		} else {
+			outBranchTypes := make([]BranchType, 0, len(branchTypes))
+
+			for _, item := range branchTypes {
+				loc2 := item.(map[string]interface{})
+				outBranchType := &BranchType{}
+				if v, ok := loc2["kind"]; ok {
+					outBranchType.Kind = v.(string)
+				}
+				if v, ok := loc2["enabled"]; ok {
+					outBranchType.Enabled = v.(bool)
+				}
+				if v, ok := loc2["prefix"]; ok {
+					outBranchType.Prefix = v.(string)
+				}
+
+				outBranchTypes = append(outBranchTypes, *outBranchType)
+			}
+
+			outBranchingModelSettings.BranchTypes = outBranchTypes
+		}
+
+		bytedata, err = json.Marshal(outBranchingModelSettings)
+
+		if err != nil {
+			return err
+		}
+
+		_, err = client.Put(fmt.Sprintf("2.0/repositories/%s/%s/branching-model/settings",
+			d.Get("owner").(string),
+			repoSlug), bytes.NewBuffer(bytedata))
+
+		if err != nil {
+			return err
+		}
+	}
+
 	return resourceRepositoryRead(d, m)
 }
 
@@ -341,8 +421,63 @@ func resourceRepositoryCreate(d *schema.ResourceData, m interface{}) error {
 		return err
 	}
 
+	branchingModelSettings := d.Get("branching_model_settings").([]interface{})
+	if len(branchingModelSettings) == 0 || branchingModelSettings[0] == nil {
+	} else {
+		loc := branchingModelSettings[0].(map[string]interface{})
+
+		outBranchingModelSettings := &BranchingModelSettings{}
+
+		developmentBranch := loc["development"].([]interface{})
+		if len(developmentBranch) == 0 || developmentBranch[0] == nil {
+		} else {
+			loc2 := developmentBranch[0].(map[string]interface{})
+			outDevelopmentBranch := &DevelopmentBranch{}
+			if v, ok := loc2["name"]; ok {
+				outDevelopmentBranch.Name = v.(string)
+			}
+			if v, ok := loc2["use_mainbranch"]; ok {
+				outDevelopmentBranch.UseMainbranch = v.(bool)
+			}
+			outBranchingModelSettings.Development = *outDevelopmentBranch
+		}
+
+		productionBranch := loc["production"].([]interface{})
+		if len(productionBranch) == 0 || productionBranch[0] == nil {
+		} else {
+			loc2 := productionBranch[0].(map[string]interface{})
+			outProductionBranch := &ProductionBranch{}
+			if v, ok := loc2["name"]; ok {
+				outProductionBranch.Name = v.(string)
+			}
+			if v, ok := loc2["use_mainbranch"]; ok {
+				outProductionBranch.UseMainbranch = v.(bool)
+			}
+			if v, ok := loc2["enabled"]; ok {
+				outProductionBranch.Enabled = v.(bool)
+			}
+
+			outBranchingModelSettings.Production = *outProductionBranch
+		}
+
+		bytedata, err = json.Marshal(outBranchingModelSettings)
+
+		if err != nil {
+			return err
+		}
+
+		_, err = client.Put(fmt.Sprintf("2.0/repositories/%s/%s/branching-model/settings",
+			d.Get("owner").(string),
+			repoSlug), bytes.NewBuffer(bytedata))
+
+		if err != nil {
+			return err
+		}
+	}
+
 	return resourceRepositoryRead(d, m)
 }
+
 func resourceRepositoryRead(d *schema.ResourceData, m interface{}) error {
 	id := d.Id()
 	if id != "" {
