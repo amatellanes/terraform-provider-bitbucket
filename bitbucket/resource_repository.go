@@ -582,34 +582,7 @@ func resourceRepositoryRead(d *schema.ResourceData, m interface{}) error {
 				return decodeerr
 			}
 
-			branchTypes := make([]interface{}, 0, len(branchingModelSettings.BranchTypes))
-
-			for _, item := range branchingModelSettings.BranchTypes {
-				branchTypes = append(branchTypes, map[string]interface{}{
-					"kind":    item.Kind,
-					"enabled": item.Enabled,
-					"prefix":  item.Prefix,
-				})
-			}
-
-			d.Set("branching_model_settings", []interface{}{
-				map[string]interface{}{
-					"branch_types": branchTypes,
-					"development": []interface{}{
-						map[string]interface{}{
-							"name":           branchingModelSettings.Development.Name,
-							"use_mainbranch": branchingModelSettings.Development.UseMainbranch,
-						},
-					},
-					"production": []interface{}{
-						map[string]interface{}{
-							"enabled":        branchingModelSettings.Production.Enabled,
-							"name":           branchingModelSettings.Production.Name,
-							"use_mainbranch": branchingModelSettings.Production.UseMainbranch,
-						},
-					},
-				},
-			})
+			d.Set("branching_model_settings", flattenBranchingModelSettings(&branchingModelSettings))
 		}
 	}
 
@@ -631,4 +604,49 @@ func resourceRepositoryDelete(d *schema.ResourceData, m interface{}) error {
 	))
 
 	return err
+}
+
+func flattenBranchingModelSettings(in *BranchingModelSettings) []interface{} {
+	m := make(map[string]interface{})
+	m["branch_types"] = flattenBranchingModelSettingsBranchTypes(in.BranchTypes)
+	m["development"] = flattenBranchingModelSettingsDevelopmentBranch(&in.Development)
+	m["production"] = flattenBranchingModelSettingsProductionBranch(&in.Production)
+
+	return []interface{}{m}
+}
+
+func flattenBranchingModelSettingsBranchTypes(in []BranchType) []map[string]interface{} {
+	out := make([]map[string]interface{}, 0, len(in))
+
+	for _, item := range in {
+		out = append(out, flattenBranchingModelSettingsBranchType(&item))
+	}
+
+	return out
+}
+
+func flattenBranchingModelSettingsBranchType(in *BranchType) map[string]interface{} {
+	out := make(map[string]interface{})
+	out["kind"] = in.Kind
+	out["enabled"] = in.Enabled
+	out["prefix"] = in.Prefix
+
+	return out
+}
+
+func flattenBranchingModelSettingsDevelopmentBranch(in *DevelopmentBranch) []interface{} {
+	out := make(map[string]interface{})
+	out["name"] = in.Name
+	out["use_mainbranch"] = in.UseMainbranch
+
+	return []interface{}{out}
+}
+
+func flattenBranchingModelSettingsProductionBranch(in *ProductionBranch) []interface{} {
+	out := make(map[string]interface{})
+	out["enabled"] = in.Enabled
+	out["name"] = in.Name
+	out["use_mainbranch"] = in.UseMainbranch
+
+	return []interface{}{out}
 }
